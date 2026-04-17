@@ -418,6 +418,18 @@
       background:linear-gradient(135deg, rgba(34,197,94,.18), rgba(255,255,255,.10));
       border-color:rgba(34,197,94,.26);
     }
+    .cta-btn.lookup{
+      background:linear-gradient(135deg, rgba(168,85,247,.18), rgba(255,255,255,.10));
+      border-color:rgba(168,85,247,.28);
+    }
+    .lookup-note{
+      margin-top:-4px;
+      padding:0 4px;
+      color:var(--muted);
+      text-align:center;
+      font-size:13px;
+      line-height:1.6;
+    }
     .notes-list{
       display:grid;
       gap:12px;
@@ -789,6 +801,94 @@
       margin-bottom:8px;
     }
     .review-a{
+      color:#dfffea;
+      line-height:1.8;
+      background:rgba(34,197,94,.10);
+      border:1px solid rgba(34,197,94,.22);
+      padding:12px 14px;
+      border-radius:14px;
+    }
+    .lookup-search-shell{
+      display:grid;
+      gap:16px;
+    }
+    .lookup-input{
+      width:100%;
+      padding:16px 18px;
+      border-radius:18px;
+      border:1px solid rgba(125,211,252,.22);
+      background:rgba(255,255,255,.06);
+      color:var(--text);
+      font:inherit;
+      outline:none;
+      transition:border-color .2s ease, box-shadow .2s ease, background .2s ease;
+    }
+    .lookup-input::placeholder{
+      color:#9fb1cd;
+    }
+    .lookup-input:focus{
+      border-color:rgba(125,211,252,.45);
+      box-shadow:0 0 0 4px rgba(125,211,252,.10);
+      background:rgba(255,255,255,.08);
+    }
+    .lookup-result-meta{
+      color:var(--muted);
+      font-size:13px;
+      line-height:1.6;
+    }
+    .lookup-result-list{
+      display:grid;
+      gap:14px;
+    }
+    .lookup-empty{
+      border-radius:20px;
+      padding:18px;
+      background:rgba(255,255,255,.05);
+      border:1px dashed rgba(255,255,255,.14);
+      color:#d9e6fb;
+      line-height:1.75;
+    }
+    .lookup-result-item{
+      border-radius:22px;
+      padding:18px;
+      background:rgba(255,255,255,.05);
+      border:1px solid var(--stroke);
+    }
+    .lookup-result-head{
+      display:flex;
+      align-items:flex-start;
+      justify-content:space-between;
+      gap:12px;
+      flex-wrap:wrap;
+      margin-bottom:12px;
+    }
+    .lookup-result-head strong{
+      color:#fff6df;
+      font-size:15px;
+      letter-spacing:.04em;
+      text-transform:uppercase;
+    }
+    .lookup-result-pill{
+      display:inline-flex;
+      align-items:center;
+      gap:8px;
+      padding:8px 12px;
+      border-radius:999px;
+      background:rgba(242,198,109,.10);
+      border:1px solid rgba(242,198,109,.22);
+      color:#fff2cf;
+      font-size:12px;
+      font-weight:800;
+      letter-spacing:.06em;
+      text-transform:uppercase;
+    }
+    .lookup-question{
+      color:#f7fbff;
+      line-height:1.8;
+      font-weight:700;
+      margin-bottom:12px;
+    }
+    .lookup-answer{
       color:#dfffea;
       line-height:1.8;
       background:rgba(34,197,94,.10);
@@ -1212,6 +1312,8 @@
             <button class="cta-btn review" id="reviewAnswersBtn" type="button">Xem lại đáp án trước khi luyện trắc nghiệm</button>
             <button class="cta-btn start" id="startPracticeBtn" type="button">Bắt đầu luyện trắc nghiệm</button>
             <button class="cta-btn mock" id="startMockBtn" type="button">THI THỬ (25 câu)</button>
+            <button class="cta-btn lookup" id="quickLookupBtn" type="button">TRA CỨU NHANH ĐÁP ÁN</button>
+            <div class="lookup-note">Nhập nội dung câu hỏi hoặc từ khóa liên quan câu hỏi</div>
           </div>
         </section>
       </div>
@@ -1357,6 +1459,49 @@
     const LETTERS = ["A","B","C","D"];
     const PREFERS_REDUCED_MOTION = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
+    function normalizeLookupText(value){
+      return String(value ?? "")
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/đ/g, "d")
+        .replace(/Đ/g, "D")
+        .toLowerCase()
+        .replace(/[^a-z0-9\s]/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+    }
+
+    const CLUSTER_LOOKUP_KEYWORDS = CLUSTERS.reduce((acc, cluster) => {
+      const quickText = Array.isArray(cluster.quick) ? cluster.quick.join(" ") : "";
+      const quickGroupText = Array.isArray(cluster.quick_groups)
+        ? cluster.quick_groups.map(group => `${group.title} ${(group.items || []).join(" ")}`).join(" ")
+        : "";
+      acc[cluster.id] = normalizeLookupText([
+        cluster.label,
+        cluster.subtitle,
+        quickText,
+        quickGroupText
+      ].join(" "));
+      return acc;
+    }, {});
+
+    const LOOKUP_INDEX = QUESTIONS.map(q => {
+      const questionNorm = normalizeLookupText(q.question);
+      const correctNorm = normalizeLookupText(q.correct);
+      const optionsNorm = normalizeLookupText((q.options || []).join(" "));
+      const clusterNorm = normalizeLookupText(`${q.clusterLabel || ""} ${CLUSTER_LOOKUP_KEYWORDS[q.clusterId] || ""}`);
+      return {
+        ...q,
+        _lookup: {
+          questionNorm,
+          correctNorm,
+          optionsNorm,
+          clusterNorm,
+          haystack: `${questionNorm} ${correctNorm} ${optionsNorm} ${clusterNorm}`.trim()
+        }
+      };
+    });
+
     const state = {
       selectedClusters: new Set(),
       selectedTime: null,
@@ -1376,6 +1521,7 @@
       reviewAnswersBtn: document.getElementById("reviewAnswersBtn"),
       startPracticeBtn: document.getElementById("startPracticeBtn"),
       startMockBtn: document.getElementById("startMockBtn"),
+      quickLookupBtn: document.getElementById("quickLookupBtn"),
       jumpToPracticeBtn: document.getElementById("jumpToPracticeBtn"),
       sessionShell: document.getElementById("sessionShell"),
       resultShell: document.getElementById("resultShell"),
@@ -1555,6 +1701,11 @@
         openMockConfirm();
       });
 
+      els.quickLookupBtn.addEventListener("click", () => {
+        playSound("click");
+        openQuickLookupModal();
+      });
+
       els.jumpToPracticeBtn.addEventListener("click", () => {
         playSound("click");
         document.getElementById("practiceSection").scrollIntoView({ behavior:"smooth", block:"start" });
@@ -1657,6 +1808,99 @@
       });
     }
 
+
+    function openQuickLookupModal(){
+      openModal(
+        "Tra cứu nhanh đáp án",
+        `<div class="lookup-search-shell">
+          <p class="modal-intro">Nhập nội dung câu hỏi hoặc từ khóa liên quan. Kết quả sẽ tự động hiển thị liên tục ngay phía dưới trong quá trình gõ.</p>
+          <input
+            type="text"
+            class="lookup-input"
+            id="quickLookupInput"
+            placeholder="Ví dụ: thể chế, chuyển đổi số, tự chủ, an ninh mạng..."
+            autocomplete="off"
+            spellcheck="false"
+          />
+          <div class="lookup-result-meta" id="quickLookupMeta">Chưa nhập từ khóa để tra cứu.</div>
+          <div class="lookup-result-list" id="quickLookupResults">
+            <div class="lookup-empty">Hãy nhập nội dung câu hỏi hoặc từ khóa liên quan để hệ thống tự động tìm câu hỏi phù hợp và hiển thị đáp án đúng nhất.</div>
+          </div>
+        </div>`
+      );
+
+      requestAnimationFrame(() => {
+        const input = document.getElementById("quickLookupInput");
+        const meta = document.getElementById("quickLookupMeta");
+        const results = document.getElementById("quickLookupResults");
+        if(!input || !meta || !results) return;
+
+        const renderLookupResults = (keyword) => {
+          const rawKeyword = String(keyword ?? "").trim();
+          const query = normalizeLookupText(rawKeyword);
+
+          if(!query){
+            meta.textContent = "Chưa nhập từ khóa để tra cứu.";
+            results.innerHTML = `<div class="lookup-empty">Hãy nhập nội dung câu hỏi hoặc từ khóa liên quan để hệ thống tự động tìm câu hỏi phù hợp và hiển thị đáp án đúng nhất.</div>`;
+            return;
+          }
+
+          const tokens = query.split(" ").filter(Boolean);
+          const ranked = LOOKUP_INDEX.map(item => {
+            const { questionNorm, correctNorm, optionsNorm, clusterNorm, haystack } = item._lookup;
+            if(!haystack.includes(query) && !tokens.every(token =>
+              questionNorm.includes(token) ||
+              correctNorm.includes(token) ||
+              optionsNorm.includes(token) ||
+              clusterNorm.includes(token)
+            )){
+              return null;
+            }
+
+            let score = 0;
+            if(questionNorm === query) score += 240;
+            if(questionNorm.startsWith(query)) score += 180;
+            if(questionNorm.includes(query)) score += 120;
+            if(correctNorm.includes(query)) score += 80;
+            if(optionsNorm.includes(query)) score += 40;
+            if(clusterNorm.includes(query)) score += 28;
+
+            tokens.forEach(token => {
+              if(questionNorm.includes(token)) score += 18;
+              if(correctNorm.includes(token)) score += 10;
+              if(optionsNorm.includes(token)) score += 6;
+              if(clusterNorm.includes(token)) score += 4;
+            });
+
+            return { item, score };
+          }).filter(Boolean)
+            .sort((a, b) => (b.score - a.score) || (a.item.tt - b.item.tt))
+            .slice(0, 20);
+
+          if(ranked.length === 0){
+            meta.textContent = `Không tìm thấy câu hỏi phù hợp với từ khóa: “${rawKeyword}”.`;
+            results.innerHTML = `<div class="lookup-empty">Chưa có kết quả phù hợp. Đồng chí thử đổi từ khóa ngắn hơn, gõ cụm trọng tâm hơn hoặc bỏ bớt một vài từ để tìm rộng hơn.</div>`;
+            return;
+          }
+
+          meta.textContent = `Tìm thấy ${ranked.length} kết quả phù hợp nhất cho từ khóa: “${rawKeyword}”.`;
+
+          results.innerHTML = ranked.map(({ item }) => `
+            <div class="lookup-result-item">
+              <div class="lookup-result-head">
+                <strong>Câu ${item.tt}</strong>
+                <span class="lookup-result-pill">${escapeHtml(item.clusterLabel || "")}</span>
+              </div>
+              <div class="lookup-question">${escapeHtml(item.question)}</div>
+              <div class="lookup-answer">Đáp án đúng nhất: ${escapeHtml(item.correct)}</div>
+            </div>
+          `).join("");
+        };
+
+        input.addEventListener("input", (e) => renderLookupResults(e.target.value));
+        input.focus();
+      });
+    }
 
     function openQuickStudyModal(){
       const cardsHtml = CLUSTERS.map(cluster => {
